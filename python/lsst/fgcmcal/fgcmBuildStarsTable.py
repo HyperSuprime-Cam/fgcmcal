@@ -207,8 +207,7 @@ class FgcmBuildStarsTableTask(FgcmBuildStarsBaseTask):
         if self.config.doSubtractLocalBackground:
             localBackgroundArea = np.pi*calibFluxApertureRadius**2.
 
-        # Determine which columns we need from the sourceTable_visit catalogs
-        columns = self._get_sourceTable_visit_columns()
+        columns = None
 
         k = 2.5/np.log(10.)
 
@@ -222,6 +221,10 @@ class FgcmBuildStarsTableTask(FgcmBuildStarsBaseTask):
             dataRef = groupedDataRefs[visit['visit']][-1]
             srcTable = dataRef.get()
 
+            if columns is None:
+                # Determine which columns we need from the sourceTable_visit catalogs
+                columns, useSkyColumn = self._get_sourceTable_visit_columns(srcTable.columns)
+
             df = srcTable.toDataFrame(columns)
 
             goodSrc = self.sourceSelector.selectSources(df)
@@ -229,7 +232,11 @@ class FgcmBuildStarsTableTask(FgcmBuildStarsBaseTask):
             # Need to add a selection based on the local background correction
             # if necessary
             if self.config.doSubtractLocalBackground:
-                localBackground = localBackgroundArea*df[self.config.localBackgroundFluxField].values
+                if useSkyColumn:
+                    localBackgroundFlux = df['sky'].values/df['LocalPhotoCalib'].values
+                else:
+                    localBackgroundFlux = df[self.config.localBackgroundFluxField].values
+                localBackground = localBackgroundArea*localBackgroundFlux
                 use, = np.where((goodSrc.selected) &
                                 ((df[self.config.instFluxField].values - localBackground) > 0.0))
             else:
@@ -321,14 +328,21 @@ class FgcmBuildStarsTableTask(FgcmBuildStarsBaseTask):
 
         return fullCatalog
 
-    def _get_sourceTable_visit_columns(self):
+    def _get_sourceTable_visit_columns(self, allColumns):
         """
         Get the sourceTable_visit columns from the config.
+
+        Parameters
+        ----------
+        allColumns : `list` [`str`]
+            List of all sourceTable_visit columns to choose from.
 
         Returns
         -------
         columns : `list`
            List of columns to read from sourceTable_visit
+        useSkyColumn : `bool`
+           Returns True if we are using the sky column for local background.
         """
         columns = [self.config.visitDataRefName, self.config.ccdDataRefName,
                    'ra', 'decl', 'x', 'y', self.config.psfCandidateName,
@@ -342,7 +356,15 @@ class FgcmBuildStarsTableTask(FgcmBuildStarsBaseTask):
         if self.sourceSelector.config.doIsolated:
             columns.append(self.sourceSelector.config.isolated.parentName)
             columns.append(self.sourceSelector.config.isolated.nChildName)
-        if self.config.doSubtractLocalBackground:
-            columns.append(self.config.localBackgroundFluxField)
 
-        return columns
+        useSkyColumn = False
+        if self.config.doSubtractLocalBackground:
+            if self.config.localBackgroundFluxField in allColumns:
+                columns.append(self.config.localBackgroundFluxField)
+            else:
+                # We need the sky and the local calibration
+                columns.append('sky')
+                columns.append('LocalPhotoCalib')
+                useSkyColumn = True
+
+        return columns, useSkyColumn
