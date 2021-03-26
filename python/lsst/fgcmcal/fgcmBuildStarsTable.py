@@ -251,7 +251,11 @@ class FgcmBuildStarsTableTask(FgcmBuildStarsBaseTask):
             tempCat['y'][:] = df['y'].values[use]
             tempCat[visitKey][:] = df[self.config.visitDataRefName].values[use]
             tempCat[ccdKey][:] = df[self.config.ccdDataRefName].values[use]
-            tempCat['psf_candidate'] = df['Calib_psf_candidate'].values[use]
+
+            Calib_psf_candidate = df['Calib_psf_candidate'].values[use]
+            for i in range(use.size):
+                rec = tempCat[i]
+                rec.set('psf_candidate', Calib_psf_candidate[i])
 
             if self.config.doSubtractLocalBackground:
                 # At the moment we only adjust the flux and not the flux
